@@ -310,6 +310,7 @@ namespace BrowserEfficiencyTest
             AddScenario(new OfficePowerpoint());
             AddScenario(new AboutBlank());
             AddScenario(new OfficeLauncher());
+            AddScenario(new HoblWorkload());
         }
 
         private void AddScenario(Scenario scenario)
