@@ -25,7 +25,6 @@
 //
 //--------------------------------------------------------------
 
-using Elevator;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -164,129 +163,114 @@ namespace BrowserEfficiencyTest
                 Thread.Sleep(_e3RefreshDelaySeconds * 1000);
             }
 
-            using (var elevatorClient = ElevatorClient.Create(_usingTraceController))
+            Console.WriteLine("[{0}] - Starting Test Pass -", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+
+            // Core Execution Loop
+            // TODO: Consider breaking up this large loop into smaller methods to ease readability.
+            for (int iteration = 0; iteration < _iterations; iteration++)
             {
-                elevatorClient.ConnectAsync().Wait();
-                elevatorClient.SendControllerMessageAsync($"{Elevator.Commands.START_PASS} {_etlPath}").Wait();
-
-                Console.WriteLine("[{0}] - Starting Test Pass -", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-
-                // Core Execution Loop
-                // TODO: Consider breaking up this large loop into smaller methods to ease readability.
-                for (int iteration = 0; iteration < _iterations; iteration++)
+                foreach (var currentMeasureSet in _measureSets)
                 {
-                    foreach (var currentMeasureSet in _measureSets)
+                    // Randomize the order the browsers each iteration to reduce systematic bias in the test
+                    Random rand = new Random();
+                    _browsers = _browsers.OrderBy(a => rand.Next()).ToList<String>();
+
+                    foreach (string browser in _browsers)
                     {
-                        // Randomize the order the browsers each iteration to reduce systematic bias in the test
-                        Random rand = new Random();
-                        _browsers = _browsers.OrderBy(a => rand.Next()).ToList<String>();
-
-                        foreach (string browser in _browsers)
+                        bool passSucceeded = false;
+                        for (int attemptNumber = 0; attemptNumber < _maxAttempts && !passSucceeded; attemptNumber++)
                         {
-                            bool passSucceeded = false;
-                            for (int attemptNumber = 0; attemptNumber < _maxAttempts && !passSucceeded; attemptNumber++)
+                            if (attemptNumber > 0)
                             {
-                                if (attemptNumber > 0)
-                                {
-                                    Console.WriteLine("[{0}] - Attempting again...", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-                                }
-
-                                elevatorClient.SendControllerMessageAsync($"{Elevator.Commands.START_BROWSER} {browser} ITERATION {iteration} SCENARIO_NAME {_scenarioName} WPRPROFILE {currentMeasureSet.Value.Item1} MODE {currentMeasureSet.Value.Item2}").Wait();
-
-                                Console.WriteLine("[{0}] - Launching Browser Driver {1} -", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), browser);
-                                using (var driver = RemoteWebDriverExtension.CreateDriverAndMaximize(browser))
-                                {
-                                    try
-                                    {
-                                        Stopwatch watch = Stopwatch.StartNew();
-                                        bool isFirstScenario = true;
-
-                                        foreach (var scenario in _scenarios)
-                                        {
-                                            // We want every scenario to take the same amount of time total, even if there are changes in
-                                            // how long pages take to load. The biggest reason for this is so that you can measure energy
-                                            // or power and their ratios will be the same either way.
-                                            // So start by getting the current time.
-                                            var startTime = watch.Elapsed;
-
-                                            // The first scenario naviagates in the browser's new tab / welcome page.
-                                            // After that, scenarios open in their own tabs
-                                            if (!isFirstScenario)
-                                            {
-                                                driver.CreateNewTab(browser);
-                                            }
-                                            else
-                                            {
-                                                isFirstScenario = false;
-                                            }
-
-                                            Console.WriteLine("[{0}] - Executing - Iteration: {1}  Browser: {2}  Scenario: {3}  MeasureSet: {4}.", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), iteration, browser, scenario.Name, currentMeasureSet.Key);
-
-                                            // Here, control is handed to the scenario to navigate, and do whatever it wants
-                                            scenario.Run(driver, browser, _logins);
-
-                                            // When we get control back, we sleep for the remaining time for the scenario. This ensures
-                                            // the total time for a scenario is always the same
-                                            var runTime = watch.Elapsed.Subtract(startTime);
-                                            var timeLeft = TimeSpan.FromSeconds(scenario.Duration).Subtract(runTime);
-                                            if (timeLeft < TimeSpan.FromSeconds(0) && !_overrideTimeout)
-                                            {
-                                                // Of course it's possible we don't get control back until after we were supposed to
-                                                // continue to the next scenario. In that case, invalidate the run by throwing.
-                                                throw new Exception(string.Format("Scenario ran longer than expected! The browser ran for {0}s. The timeout for this scenario is {1}s.", runTime.TotalSeconds, scenario.Duration));
-                                            }
-                                            else if (!_overrideTimeout)
-                                            {
-                                                Thread.Sleep(timeLeft);
-                                            }
-
-                                            Console.WriteLine("[{0}] - Completed - Iteration: {1}  Browser: {2}  Scenario: {3}  MeasureSet: {4}. Scenario ran for {5} seconds.", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), iteration, browser, scenario.Name, currentMeasureSet.Key, runTime.TotalSeconds); 
-                                        }
-
-                                        Console.WriteLine("[{0}] - Completed Browser: {1}  Iteration: {2}  MeasureSet: {3}", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), browser, iteration, currentMeasureSet.Key);
-
-                                        driver.CloseAllTabs(browser);
-                                        passSucceeded = true;
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        // If something goes wrong and we get an exception halfway through the scenario, we clean up
-                                        // and put everything back into a state where we can start the next iteration.
-                                        elevatorClient.SendControllerMessageAsync(Elevator.Commands.CANCEL_PASS);
-                                        driver.CloseAllTabs(browser);
-                                        Console.WriteLine("/-EXCEPTION---------------------------------------------\\");
-                                        Console.WriteLine("[{0}] - Caught exception while trying to run scenario. Exception:", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-                                        Console.WriteLine(ex);
-                                        if (_usingTraceController)
-                                        {
-                                            Console.WriteLine("Trace has been discarded");
-                                        }
-                                        Console.WriteLine("\\-------------------------------------------------------/");
-                                    }
-                                    finally
-                                    {
-                                        if (_usingTraceController)
-                                        {
-                                            Console.WriteLine("[{0}] - Pausing between tracing sessions to reduce interference.", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-
-                                            // E3 system aggregates energy data at regular intervals. For our test passes we use 10 second intervals. Waiting here for 12 seconds before continuing ensures
-                                            // that the browser energy data reported by E3 for this run is only for this run and does not bleed into any other runs.
-                                            Thread.Sleep(_e3RefreshDelaySeconds * 1000);
-                                        }
-                                    }
-                                }
+                                Console.WriteLine("[{0}] - Attempting again...", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
                             }
 
-                            if (passSucceeded)
+                            Console.WriteLine("[{0}] - Launching Browser Driver {1} -", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), browser);
+                            using (var driver = RemoteWebDriverExtension.CreateDriverAndMaximize(browser))
                             {
-                                elevatorClient.SendControllerMessageAsync($"{Elevator.Commands.END_BROWSER} {browser}").Wait();
+                                try
+                                {
+                                    Stopwatch watch = Stopwatch.StartNew();
+                                    bool isFirstScenario = true;
+
+                                    foreach (var scenario in _scenarios)
+                                    {
+                                        // We want every scenario to take the same amount of time total, even if there are changes in
+                                        // how long pages take to load. The biggest reason for this is so that you can measure energy
+                                        // or power and their ratios will be the same either way.
+                                        // So start by getting the current time.
+                                        var startTime = watch.Elapsed;
+
+                                        // The first scenario naviagates in the browser's new tab / welcome page.
+                                        // After that, scenarios open in their own tabs
+                                        if (!isFirstScenario)
+                                        {
+                                            driver.CreateNewTab(browser);
+                                        }
+                                        else
+                                        {
+                                            isFirstScenario = false;
+                                        }
+
+                                        Console.WriteLine("[{0}] - Executing - Iteration: {1}  Browser: {2}  Scenario: {3}  MeasureSet: {4}.", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), iteration, browser, scenario.Name, currentMeasureSet.Key);
+
+                                        // Here, control is handed to the scenario to navigate, and do whatever it wants
+                                        scenario.Run(driver, browser, _logins);
+
+                                        // When we get control back, we sleep for the remaining time for the scenario. This ensures
+                                        // the total time for a scenario is always the same
+                                        var runTime = watch.Elapsed.Subtract(startTime);
+                                        var timeLeft = TimeSpan.FromSeconds(scenario.Duration).Subtract(runTime);
+                                        if (timeLeft < TimeSpan.FromSeconds(0) && !_overrideTimeout)
+                                        {
+                                            // Of course it's possible we don't get control back until after we were supposed to
+                                            // continue to the next scenario. In that case, invalidate the run by throwing.
+                                            throw new Exception(string.Format("Scenario ran longer than expected! The browser ran for {0}s. The timeout for this scenario is {1}s.", runTime.TotalSeconds, scenario.Duration));
+                                        }
+                                        else if (!_overrideTimeout)
+                                        {
+                                            Thread.Sleep(timeLeft);
+                                        }
+
+                                        Console.WriteLine("[{0}] - Completed - Iteration: {1}  Browser: {2}  Scenario: {3}  MeasureSet: {4}. Scenario ran for {5} seconds.", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), iteration, browser, scenario.Name, currentMeasureSet.Key, runTime.TotalSeconds); 
+                                    }
+
+                                    Console.WriteLine("[{0}] - Completed Browser: {1}  Iteration: {2}  MeasureSet: {3}", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), browser, iteration, currentMeasureSet.Key);
+
+                                    driver.CloseAllTabs(browser);
+                                    passSucceeded = true;
+                                }
+                                catch (Exception ex)
+                                {
+                                    // If something goes wrong and we get an exception halfway through the scenario, we clean up
+                                    // and put everything back into a state where we can start the next iteration.
+                                    driver.CloseAllTabs(browser);
+                                    Console.WriteLine("/-EXCEPTION---------------------------------------------\\");
+                                    Console.WriteLine("[{0}] - Caught exception while trying to run scenario. Exception:", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                                    Console.WriteLine(ex);
+                                    if (_usingTraceController)
+                                    {
+                                        Console.WriteLine("Trace has been discarded");
+                                    }
+                                    Console.WriteLine("\\-------------------------------------------------------/");
+                                }
+                                finally
+                                {
+                                    if (_usingTraceController)
+                                    {
+                                        Console.WriteLine("[{0}] - Pausing between tracing sessions to reduce interference.", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+
+                                        // E3 system aggregates energy data at regular intervals. For our test passes we use 10 second intervals. Waiting here for 12 seconds before continuing ensures
+                                        // that the browser energy data reported by E3 for this run is only for this run and does not bleed into any other runs.
+                                        Thread.Sleep(_e3RefreshDelaySeconds * 1000);
+                                    }
+                                }
                             }
                         }
                     }
                 }
-                Console.WriteLine("[{0}] - Ending Test Pass -", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-                elevatorClient.SendControllerMessageAsync(Elevator.Commands.END_PASS).Wait();
             }
+            Console.WriteLine("[{0}] - Ending Test Pass -", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
         }
     }
 }

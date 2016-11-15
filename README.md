@@ -1,6 +1,9 @@
 # Welcome!
 
+**This workload is not intended to be supported long term. It's a fork from the supported BrowserEfficiencyTest repo to help transition the Surface team**
+
 BrowserEfficiencyTest is a [Selenium WebDriver](http://docs.seleniumhq.org/) based web browser test automation project written in C#. It allows you to run through common tasks done in browsers (look through a Facebook feed, go through some emails, browse the news) done in multiple tabs, and uses Windows Performance Recorder to measure how much power, CPU, or other resources were used in order to accomplish those tasks. It currently supports:
+
 * Microsoft Edge
 * Google Chrome
 * Firefox

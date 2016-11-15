@@ -263,7 +263,6 @@ namespace BrowserEfficiencyTest
                         }
                         break;
                     case "-notimeout":
-                        argNum++;
                         OverrideTimeout = true;
                         break;
                     default:
@@ -310,6 +309,7 @@ namespace BrowserEfficiencyTest
             AddScenario(new OfficePowerpoint());
             AddScenario(new AboutBlank());
             AddScenario(new OfficeLauncher());
+            AddScenario(new HoblWorkload());
         }
 
         private void AddScenario(Scenario scenario)
