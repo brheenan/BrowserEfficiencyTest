@@ -1,4 +1,4 @@
-﻿//--------------------------------------------------------------
+//--------------------------------------------------------------
 //
 // Browser Efficiency Test
 // Copyright(c) Microsoft Corporation
@@ -45,19 +45,14 @@ namespace BrowserEfficiencyTest
         {
             driver.Navigate().GoToUrl("http://www.yahoo.com");
             driver.Wait(10);
-
-            // No reliable class or id for the news link, so get the news icon, then find its parent
-            IWebElement newsLink = driver.FindElementByClassName("IconNews").FindElement(By.XPath(".."));
+            IWebElement newsLink = driver.FindElementByCssSelector("a[href$='yahoo.com/news/']");
             newsLink.SendKeys(String.Empty);
             newsLink.SendKeys(Keys.Enter);
 
             Thread.Sleep(10000);
-
             // Get the "mega" story and navigate to it
             // We appear to be taking advantage of a test hook in the page for their own tests
-            IWebElement newsArticles = driver.FindElement(By.Id("tgtm-YDC-Stream"));
-            IWebElement mega = newsArticles.FindElement(By.XPath("//*[@data-test-locator='mega']"));
-            IWebElement articleLink = mega.FindElement(By.TagName("h3")).FindElement(By.TagName("a"));
+            IWebElement articleLink = driver.FindElementByCssSelector("div[data-test-locator=mega] h3 a");
             articleLink.SendKeys(String.Empty);
             articleLink.SendKeys(Keys.Enter);
         }
